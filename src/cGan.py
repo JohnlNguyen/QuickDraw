@@ -149,7 +149,7 @@ class QuickDrawDataset(Dataset):
             transform (callable, optional): Optional transform to be applied
                 on a sample.
         """
-        self.data_frame = np.load(f'data/{label}.npy')
+        self.data_frame = np.load('data/%s.npy' % label)
         self.label = label
         self.transform = transform
 
