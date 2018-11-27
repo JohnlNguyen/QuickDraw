@@ -1,0 +1,92 @@
+\documentclass[10pt,twocolumn,letterpaper]{article}
+    
+    \usepackage{cvpr}
+    \usepackage{times}
+    \usepackage{epsfig}
+    \usepackage{graphicx}
+    \usepackage{amsmath}
+    \usepackage{amssymb}
+    
+    % Include other packages here, before hyperref.
+    
+    % If you comment hyperref and then uncomment it, you should delete
+    % egpaper.aux before re-running latex.  (Or just hit 'q' on the first latex
+    % run, let it finish, and you should be clear).
+    \usepackage[breaklinks=true,bookmarks=false]{hyperref}
+    
+    \cvprfinalcopy % *** Uncomment this line for the final submission
+    
+    \def\cvprPaperID{****} % *** Enter the CVPR Paper ID here
+    \def\httilde{\mbox{\tt\raisebox{-.5ex}{\symbol{126}}}}
+    
+    % Pages are numbered in submission mode, and unnumbered in camera-ready
+    %\ifcvprfinal\pagestyle{empty}\fi
+    \setcounter{page}{4321}
+    \begin{document}
+    
+    %%%%%%%%% TITLE
+    \title{DoodleNet}
+    
+    \author{Fatemah Radaei, John Nguyen, Kurt Schneider, Paulina Lei, and Yu Su \\
+    University of California, Davis\\
+    Kemper Hall\\}
+    % {\tt\small}
+    % For a paper whose authors are all at the same institution,
+    % omit the following lines up until the closing ``}''.
+    % Additional authors and addresses can be added with ``\and'',
+    % just like the second author.
+    % To save space, use either the email address or home page, not both
+    % \and
+    % Second Author\\
+    % Institution2\\
+    % First line of institution2 address\\
+    % {\tt\small secondauthor@i2.org}
+    % }
+    
+    \maketitle
+    %\thispagestyle{empty}
+    
+    %%%%%%%%% ABSTRACT
+    \begin{abstract}
+       Generative adversarial networks (GANs) are a part of generative models. Despite lots of work being done with GANs, research has mainly focused on real images and photographs. Our project focuses on generating doodles from a given class using Google's "Quick, Draw!" dataset.
+       (TODO: Write about method, talk about results and conclusion)
+    \end{abstract}
+    
+    %%%%%%%%% BODY TEXT
+    \section{Introduction}
+    Generative adversarial networks (GANs) is a powerful generative model that can be used for image generation \cite{Goodfellow}. Being able to automatically generate images from an existing pool of images has been a popular topic due to useful and exciting applications in many fields such as the photography, advertising, films, and more. GANs have made extensive strides in recent years, with the development of conditional GANs, deep convolutional GANs, and more.
+    
+    Although much work has been done for GANs, GANs are usually used on photographs of real people, places, animals, and things. Not much work has been done for GANs in terms of human-generated doodles. We use the dataset from Google's "Quick, Draw!" game. The game was released to the public to show the power of artificial intelligence. The game prompts the user to draw an image of a certain category, and the game would try to predict and guess what the doodle was. Google released a subset of this dataset, which includes 50 million drawings with 340 label categories. We chose 10 categories at random to train our network on. The categories we ended up with are aircraft carrier, basket, bed, ceiling fan, headphones, leg, panda, piano, raccoon, and saxophone.
+    %------------------------------------------------------------------------
+    \section{Related work}
+    
+    \subsection{Generative Adversarial Networks}
+    The development of GANs is relatively recent, which was introduced by Ian Goodfellow in 2014. The proposed technique would pit a generative model against an adversary. The discriminative model would learn whether a generated sample is from the actual dataset or modeled off of it. There is an generator G that is trained to produce outputs that cannot be distinguished by a discriminator D, which is trained to try to detect the generated images \cite{Goodfellow}. Using this method, the GAN would generate an image that would look authentic to an observer.
+    
+    \subsection{Conditional GANs}
+    Building on the idea of GANs, conditional GANs were proposed to allow the feeding of data to condition both the generator and discriminator \cite{Mirza}. For an unconditioned generative model, there are no controls for the data being generated. With a condition, it is possible to direct a data generation process. For our experiment, we base our conditioning on class labels.
+    
+    \subsection{Frechet Inception Distance (FID)}
+    The FID provides a metric to quantify the quality of generated samples \cite{Lucic}. It has been shown to be consistent with human judgment of images. We use this metric in order to analyze the images generated from our regular GAN and our conditional GAN.
+    %------------------------------------------------------------------------
+    \section{Method}
+    GANs generate images through learning a mapping from a random noise vector to an output image. As we used a conditional GAN in addition to a GAN, our conditional GAN learned a mapping from an observed image and a random noise vector to an output image \cite{Isola}.
+    %------------------------------------------------------------------------
+    \section{Experiments}
+    
+    %------------------------------------------------------------------------
+    \section{Results}
+    
+    %------------------------------------------------------------------------
+    \section{Conclusion}
+    
+    
+    
+    
+    {\small
+    \bibliographystyle{ieee}
+    \bibliography{egbib}
+    }
+    
+    \end{document}
+    
