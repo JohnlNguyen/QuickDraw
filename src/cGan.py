@@ -33,7 +33,7 @@ batch_size = 32
 learning_rate = .0002
 b1 = .5
 b2 = .999
-sample_interval = 1
+sample_interval = 4000
 
 img_shape = (channels, img_size, img_size)
 
@@ -149,9 +149,12 @@ class QuickDrawDataset(Dataset):
             transform (callable, optional): Optional transform to be applied
                 on a sample.
         """
-        self.data_frame = np.load('data/%s.npy' % label)
+        self.data_frame = np.apply_along_axis(self.__reshape_row, 1, np.load("data/%s.npy" % label))
         self.label = label
         self.transform = transform
+
+    def __reshape_row(self, row):
+        return np.reshape(row, img_shape)
 
     def __len__(self):
         return len(self.data_frame)
@@ -161,29 +164,23 @@ class QuickDrawDataset(Dataset):
         label = self.label
         return image, 1
 
-
-
-# In[15]:
-
-models = {
-        'generator': generator.model.state_dict(),
-        'discriminator': discriminator.model.state_dict(),
-        'optimizer_gen': optimizer_G.state_dict(),
-        'optimizer_dis': optimizer_D.state_dict(),
-    }
+training_gen_loss = []
+training_dis_loss = []
 
 def save_models(path):
-    torch.save(models, path)
-    return
+    torch.save({
+            'epoch': epoch,
+            'generator': generator.model.state_dict(),
+            'discriminator': discriminator.model.state_dict(),
+            'optimizer_gen': optimizer_G.state_dict(),
+            'optimizer_dis': optimizer_D.state_dict(),
+            'G_loss': training_gen_loss,
+            'D_loss': training_dis_loss
+            }, path)
+
 
 def load_models(path):
-    checkpoint = torch.load(path)
-
-    m.load_state_dict(torch.load(path), strict=False)
-    for key, model in models.item():
-        pass
-        # TODO: finish this
-    return
+    pass
 
 
 data = QuickDrawDataset(label='panda', transform=transforms.Compose([
@@ -192,7 +189,10 @@ data = QuickDrawDataset(label='panda', transform=transforms.Compose([
                         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]))
 dataloader = DataLoader(data, batch_size=32, shuffle=False)
 
-for epoch in range(1):
+
+for epoch in range(200):
+    mean_dis_loss = []
+    mean_gen_loss = []
     for i, (imgs, labels) in enumerate(dataloader):
         batch_size = len(imgs)
 
@@ -203,7 +203,6 @@ for epoch in range(1):
         # Configure input
         real_imgs = Variable(imgs.type(FloatTensor)) # 32x794
         labels = Variable(labels.type(LongTensor))
-
         # -----------------
         #  Train Generator
         # -----------------
@@ -244,12 +243,18 @@ for epoch in range(1):
         d_loss.backward()
         optimizer_D.step()
 
+        mean_dis_loss.append(d_loss.item())
+        mean_gen_loss.append(g_loss.item())
+
         print ("[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f]" % (epoch, 1, i, len(dataloader),
                                                             d_loss.item(), g_loss.item()))
 
         batches_done = epoch * len(dataloader) + i
         if batches_done % sample_interval == 0:
             sample_image(n_row=10, batches_done=batches_done)
+
+    training_gen_loss.append(np.mean(mean_dis_loss))
+    training_dis_loss.append(np.mean(mean_gen_loss))
 
 
 save_models('saved_models/models')
