@@ -22,18 +22,21 @@ import torch
 
 from download import classes
 
+import matplotlib.pyplot as plt
+
 os.makedirs('images', exist_ok=True)
 os.makedirs('saved_models', exist_ok=True)
 
+num_epochs=100
 channels = 1
 img_size = 28
 n_classes = 10
 latent_dim = 100
 batch_size = 32
 learning_rate = .0002
-b1 = .5
+b1 = .9
 b2 = .999
-sample_interval = 1
+sample_interval = 10
 
 img_shape = (channels, img_size, img_size)
 
@@ -49,16 +52,17 @@ class Generator(nn.Module):
             layers = [  nn.Linear(in_feat, out_feat)]
             if normalize:
                 layers.append(nn.BatchNorm1d(out_feat, 0.8))
-            layers.append(nn.LeakyReLU(0.2, inplace=True))
+            layers.append(nn.LeakyReLU(inplace=True))
             return layers
 
         self.model = nn.Sequential(
             *block(latent_dim+n_classes, 128, normalize=False),
             *block(128, 256),
+            *block(256, 256),
             *block(256, 512),
             *block(512, 1024),
             nn.Linear(1024, int(np.prod(img_shape))),
-            nn.Tanh()
+            nn.Tanh(),
         )
 
     def forward(self, noise, labels):
@@ -78,15 +82,22 @@ class Discriminator(nn.Module):
         self.label_embedding = nn.Embedding(n_classes, n_classes)
 
         self.model = nn.Sequential(
-            nn.Linear(n_classes + int(np.prod(img_shape)), 512),
+            nn.Linear(n_classes + int(np.prod(img_shape)), 64),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(512, 512),
+
+            nn.Linear(64, 64),
             nn.Dropout(0.4),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(512, 512),
+
+            nn.Linear(64, 128),
             nn.Dropout(0.4),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(512, 1)
+
+            nn.Linear(128,128),
+            nn.Dropout(0.4),
+            nn.LeakyReLU(0.2, inplace=True),
+
+            nn.Linear(128, 1),
         )
 
     def forward(self, img, labels):
@@ -149,9 +160,12 @@ class QuickDrawDataset(Dataset):
             transform (callable, optional): Optional transform to be applied
                 on a sample.
         """
-        self.data_frame = np.load('data/%s.npy' % label)
+        self.data_frame = np.apply_along_axis(self.__reshape_row, 1, np.load("data/%s.npy" % label))
         self.label = label
         self.transform = transform
+
+    def __reshape_row(self, row):
+        return np.reshape(row, img_shape)
 
     def __len__(self):
         return len(self.data_frame)
@@ -166,39 +180,41 @@ class QuickDrawDataset(Dataset):
 # In[15]:
 
 models = {
-        'generator': generator.model.state_dict(),
-        'discriminator': discriminator.model.state_dict(),
+        'generator': generator.state_dict(),
+        'discriminator': discriminator.state_dict(),
         'optimizer_gen': optimizer_G.state_dict(),
         'optimizer_dis': optimizer_D.state_dict(),
     }
 
-def save_models(path):
-    torch.save(models, path)
+def save_models(path, epoch):
+    os.makedirs(path + "/epoch_" + str(epoch), exist_ok=True)
+    torch.save(models, path + "/epoch_" + str(epoch) + "/models")
     return
 
 def load_models(path):
     checkpoint = torch.load(path)
 
-    m.load_state_dict(torch.load(path), strict=False)
-    for key, model in models.item():
-        pass
-        # TODO: finish this
-    return
+    generator.load_state_dict(checkpoint['generator'])
+    discriminator.load_state_dict(checkpoint['discriminator'])
 
+
+load_models("saved_models/epoch_9/models")
 
 data = QuickDrawDataset(label='panda', transform=transforms.Compose([
                         transforms.Resize(img_size),
                         transforms.ToTensor(),
-                        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]))
-dataloader = DataLoader(data, batch_size=32, shuffle=False)
+                        transforms.Normalize((0), (255))]))
 
-for epoch in range(1):
+dataloader = DataLoader(data, batch_size=4096, shuffle=True)
+
+for epoch in range(num_epochs):
     for i, (imgs, labels) in enumerate(dataloader):
         batch_size = len(imgs)
 
         # Adversarial ground truths
-        valid = Variable(FloatTensor(batch_size, 1).fill_(1.0), requires_grad=False)
-        fake = Variable(FloatTensor(batch_size, 1).fill_(0.0), requires_grad=False)
+        perturbation =  np.random.normal(0.2,0.1)
+        valid = Variable(FloatTensor(batch_size, 1).fill_(1.0 + perturbation), requires_grad=False)
+        fake = Variable(FloatTensor(batch_size, 1).fill_(0.0 - perturbation), requires_grad=False)
 
         # Configure input
         real_imgs = Variable(imgs.type(FloatTensor)) # 32x794
@@ -219,7 +235,7 @@ for epoch in range(1):
 
         # Loss measures generator's ability to fool the discriminator
         validity = discriminator(gen_imgs, gen_labels)
-        g_loss = adversarial_loss(validity, valid)
+        g_loss = adversarial_loss(validity, valid) # here
 
         g_loss.backward()
         optimizer_G.step()
@@ -228,31 +244,35 @@ for epoch in range(1):
         #  Train Discriminator
         # ---------------------
 
-        optimizer_D.zero_grad()
+        if np.random.randint(0,4) == 0:
+            optimizer_D.zero_grad()
 
-        # Loss for real images
-        validity_real = discriminator(real_imgs, labels)
-        d_real_loss = adversarial_loss(validity_real, valid)
+            # Loss for real images
+            validity_real = discriminator(real_imgs, labels)
+            d_real_loss = adversarial_loss(validity_real, valid)
 
-        # Loss for fake images
-        validity_fake = discriminator(gen_imgs.detach(), gen_labels)
-        d_fake_loss = adversarial_loss(validity_fake, fake)
+            # Loss for fake images
+            validity_fake = discriminator(gen_imgs.detach(), gen_labels)
+            d_fake_loss = adversarial_loss(validity_fake, fake)
 
-        # Total discriminator loss
-        d_loss = (d_real_loss + d_fake_loss) / 2
+            # Total discriminator loss
+            d_loss = (d_real_loss + d_fake_loss)
 
-        d_loss.backward()
-        optimizer_D.step()
+            d_loss.backward()
+            optimizer_D.step()
 
-        print ("[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f]" % (epoch, 1, i, len(dataloader),
+            print ("[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f]" % (epoch, 1, i, len(dataloader),
                                                             d_loss.item(), g_loss.item()))
+        else:
+            print ("[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f]" % (epoch, 1, i, len(dataloader),
+                                                            -1, g_loss.item()))
 
         batches_done = epoch * len(dataloader) + i
         if batches_done % sample_interval == 0:
             sample_image(n_row=10, batches_done=batches_done)
 
 
-save_models('saved_models/models')
+    save_models('saved_models', epoch)
 
 
 
