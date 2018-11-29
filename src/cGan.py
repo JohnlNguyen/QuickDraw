@@ -1,13 +1,14 @@
 
 # coding: utf-8
 
-# In[7]:
+# In[28]:
 
 
 import argparse
 import os
 import numpy as np
 import math
+import matplotlib.pyplot as plt
 
 import torchvision.transforms as transforms
 from torchvision.utils import save_image
@@ -20,7 +21,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch
 
-from download import classes
+import matplotlib.pyplot as plt
 
 os.makedirs('images', exist_ok=True)
 os.makedirs('saved_models', exist_ok=True)
@@ -33,9 +34,10 @@ batch_size = 32
 learning_rate = .0002
 b1 = .5
 b2 = .999
-sample_interval = 4000
+sample_interval = 400
+n_epochs = 2
+img_shape = (img_size, img_size, channels)
 
-img_shape = (channels, img_size, img_size)
 
 cuda = True if torch.cuda.is_available() else False
 
@@ -113,7 +115,7 @@ if cuda:
     auxiliary_loss.cuda()
 
 
-# In[12]:
+# In[3]:
 
 
 # Optimizers
@@ -129,14 +131,25 @@ def sample_image(n_row, batches_done):
     # Sample noise
     z = Variable(FloatTensor(np.random.normal(0, 1, (n_row**2, latent_dim))))
     # Get labels ranging from 0 to n_classes for n rows
-    labels = np.array([num for _ in range(n_row) for num in range(n_row)])
+    labels = np.array([1 for _ in range(n_row) for num in range(n_row)])
     labels = Variable(LongTensor(labels))
     gen_imgs = generator(z, labels)
     save_image(gen_imgs.data, 'images/%d.png' % batches_done, nrow=n_row, normalize=True)
 
 
-# In[13]:
+# In[18]:
 
+
+classes = ['saxophone',
+            'raccoon',
+            'piano',
+            'panda',
+            'leg',
+            'headphones',
+            'ceiling_fan',
+            'bed',
+            'basket',
+            'aircraft_carrier']
 
 class QuickDrawDataset(Dataset):
     """Quick Draw dataset."""
@@ -149,38 +162,29 @@ class QuickDrawDataset(Dataset):
             transform (callable, optional): Optional transform to be applied
                 on a sample.
         """
-        self.data_frame = np.apply_along_axis(self.__reshape_row, 1, np.load("data/%s.npy" % label))
+        self.data_frame = self.get_all_classes(1000)
         self.label = label
         self.transform = transform
 
-    def __reshape_row(self, row):
-        return np.reshape(row, img_shape)
+    def get_all_classes(self, sample_per_class=100):
+        all_classes = []
+        for i, label in enumerate(classes):
+            img = np.apply_along_axis(self.__reshape_row, 1, np.load('./data/%s.npy' % label))
+            all_classes.extend([(row, i) for row in img[np.random.choice(len(img), sample_per_class)]])
+        return all_classes
 
+    def __reshape_row(self, row):
+        return np.reshape(row, (28, 28))
     def __len__(self):
         return len(self.data_frame)
 
     def __getitem__(self, idx):
-        image = self.data_frame[idx]
-        label = self.label
-        return image, 1
-
-training_gen_loss = []
-training_dis_loss = []
-
-def save_models(path):
-    torch.save({
-            'epoch': epoch,
-            'generator': generator.model.state_dict(),
-            'discriminator': discriminator.model.state_dict(),
-            'optimizer_gen': optimizer_G.state_dict(),
-            'optimizer_dis': optimizer_D.state_dict(),
-            'G_loss': training_gen_loss,
-            'D_loss': training_dis_loss
-            }, path)
+        image = self.data_frame[idx][0]
+        label = self.data_frame[idx][1]
+        return image, label
 
 
-def load_models(path):
-    pass
+# In[19]:
 
 
 data = QuickDrawDataset(label='panda', transform=transforms.Compose([
@@ -190,7 +194,13 @@ data = QuickDrawDataset(label='panda', transform=transforms.Compose([
 dataloader = DataLoader(data, batch_size=32, shuffle=False)
 
 
-for epoch in range(200):
+# In[45]:
+
+
+training_gen_loss = []
+training_dis_loss = []
+
+for epoch in range(n_epochs):
     mean_dis_loss = []
     mean_gen_loss = []
     for i, (imgs, labels) in enumerate(dataloader):
@@ -201,8 +211,9 @@ for epoch in range(200):
         fake = Variable(FloatTensor(batch_size, 1).fill_(0.0), requires_grad=False)
 
         # Configure input
-        real_imgs = Variable(imgs.type(FloatTensor)) # 32x794
+        real_imgs = Variable(imgs.type(FloatTensor))
         labels = Variable(labels.type(LongTensor))
+
         # -----------------
         #  Train Generator
         # -----------------
@@ -211,10 +222,11 @@ for epoch in range(200):
 
         # Sample noise and labels as generator input
         z = Variable(FloatTensor(np.random.normal(0, 1, (batch_size, latent_dim))))
-        gen_labels = Variable(LongTensor(np.random.randint(0, 1, batch_size)))
+        gen_labels = Variable(LongTensor(np.array([1]*batch_size)))
 
         # Generate a batch of images
         gen_imgs = generator(z, gen_labels)
+
 
         # Loss measures generator's ability to fool the discriminator
         validity = discriminator(gen_imgs, gen_labels)
@@ -250,14 +262,31 @@ for epoch in range(200):
                                                             d_loss.item(), g_loss.item()))
 
         batches_done = epoch * len(dataloader) + i
-        if batches_done % sample_interval == 0:
-            sample_image(n_row=10, batches_done=batches_done)
+        if epoch % 50 == 0 and batches_done % sample_interval == 0:
+            plt.figure(figsize=(5,5))
+            for k in range(4):
+                plt.subplot(4, 4, k+1)
+                plt.imshow(gen_imgs.detach().numpy()[k][0], cmap='gray')
+                plt.axis('off')
+            plt.tight_layout()
+            plt.savefig('./images/epoch_{}_{}.png'.format(epoch+1, batches_done))
 
     training_gen_loss.append(np.mean(mean_dis_loss))
     training_dis_loss.append(np.mean(mean_gen_loss))
 
 
-save_models('saved_models/models')
+# In[54]:
 
 
+def save_model():
+    torch.save({
+            'epoch': n_epochs,
+            'generator': generator.model.state_dict(),
+            'discriminator': discriminator.model.state_dict(),
+            'optimizer_gen': optimizer_G.state_dict(),
+            'optimizer_dis': optimizer_D.state_dict(),
+            'G_loss': training_gen_loss,
+            'D_loss': training_dis_loss
+            }, 'saved_models/models')
+save_model()
 
