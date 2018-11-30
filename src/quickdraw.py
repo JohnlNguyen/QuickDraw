@@ -98,7 +98,6 @@ def generator_builder(z_dim=100,depth=64,p=0.4):
 generator = generator_builder()
 
 def adversarial_builder(z_dim=100):
-
     model = Sequential()
     model.add(generator)
     model.add(discriminator)
@@ -113,7 +112,7 @@ def make_trainable(net, is_trainable):
         l.trainable = is_trainable
 
 
-def train(label, data, epochs=2000,batch=128):
+def train(df, epochs=2000,batch=128):
     d_loss = []
     a_loss = []
     running_d_loss = 0
@@ -121,7 +120,9 @@ def train(label, data, epochs=2000,batch=128):
     running_a_loss = 0
     running_a_acc = 0
     for i in range(epochs):
-        real_imgs = np.reshape(data[np.random.choice(data.shape[0],batch,replace=False)],(batch,28,28,1))
+        batch_idx = np.random.choice(df.shape[0] ,batch,replace=False)
+
+        real_imgs = np.array([np.reshape(row, (28, 28, 1)) for row in df['Image'].iloc[batch_idx]])
         fake_imgs = generator.predict(np.random.uniform(-1.0, 1.0, size=[batch, 100]))
         x = np.concatenate((real_imgs,fake_imgs))
         y = np.ones([2*batch,1])
@@ -152,18 +153,21 @@ def train(label, data, epochs=2000,batch=128):
                 plt.axis('off')
             plt.tight_layout()
             plt.show()
-            plt.savefig('./images/{}_{}.png'.format(label, i+1))
+            plt.savefig('./images/{}.png'.format(i+1))
     return a_loss, d_loss
 
 
-def train_all_classes():
+def get_all_classes():
+    df = pd.DataFrame([], columns=['Image', 'Label'])
     for i, label in enumerate(classes):
         data = np.load('./data/%s.npy' % label) / 255
         data = np.reshape(data, [data.shape[0], img_size, img_size, 1])
-        print("Label : {}".format(label))
-        a_loss, d_loss = train(epochs=6000, batch=128, label=label, data=data)
+        df2 = pd.DataFrame([(row, i) for row in data], columns=['Image', 'Label'])
+        df = df.append(df2)
+    return df.sample(frac=1) # shuffle
 
-train_all_classes()
+data = get_all_classes()
+train(data, epochs=6000, batch=128)
 
 
 
