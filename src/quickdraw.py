@@ -7,6 +7,7 @@ from keras.models import Sequential, Model
 from keras.layers import Input, Dense, Conv2D, BatchNormalization, Dropout, Flatten
 from keras.layers import Activation, Reshape, Conv2DTranspose, UpSampling2D
 from keras.optimizers import RMSprop
+from keras import optimizers
 
 import pandas as pd
 import matplotlib
@@ -56,7 +57,6 @@ def discriminator_builder(depth=64,p=0.4):
     return model
 
 discriminator = discriminator_builder()
-
 discriminator.compile(loss='binary_crossentropy', optimizer=RMSprop(lr=0.0008, clipvalue=1.0, decay=6e-8), metrics=['accuracy'])
 
 def generator_builder(z_dim=100,depth=64,p=0.4):
@@ -119,7 +119,7 @@ def train(df, epochs=2000,batch=128):
     running_d_acc = 0
     running_a_loss = 0
     running_a_acc = 0
-    for i in range(epochs):
+    for i in range(1, epochs+1):
         batch_idx = np.random.choice(df.shape[0] ,batch,replace=False)
 
         real_imgs = np.array([np.reshape(row, (28, 28, 1)) for row in df['Image'].iloc[batch_idx]])
@@ -139,8 +139,8 @@ def train(df, epochs=2000,batch=128):
         running_a_loss += a_loss[-1][0]
         running_a_acc += a_loss[-1][1]
 
-        log_mesg = "%d: [D loss: %f, acc: %f]" % (i+1, running_d_loss/i+1, running_d_acc/i+1)
-        log_mesg = "%s  [A loss: %f, acc: %f]" % (log_mesg, running_a_loss/i+1, running_a_acc/i+1)
+        log_mesg = "%d: [D loss: %f, acc: %f]" % (i, running_d_loss/i, running_d_acc/i)
+        log_mesg = "%s  [A loss: %f, acc: %f]" % (log_mesg, running_a_loss/i, running_a_acc/i)
         print(log_mesg)
 
         if (i+1)%1000 == 0:
@@ -166,8 +166,18 @@ def get_all_classes():
         df = df.append(df2)
     return df.sample(frac=1) # shuffle
 
+def save_model(model_json, name):
+    with open(name, "w+") as json_file:
+        json_file.write(model_json)
+
 data = get_all_classes()
 train(data, epochs=6000, batch=128)
+save_model(generator.to_json(), "generator.json")
+save_model(AM.to_json(), "discriminator.json")
+
+
+
+
 
 
 
