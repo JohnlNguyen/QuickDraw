@@ -12,6 +12,7 @@ from keras import optimizers
 import pandas as pd
 import matplotlib
 from matplotlib import pyplot as plt
+
 matplotlib.interactive(True)
 
 
@@ -20,6 +21,8 @@ channels = 1
 img_size = 28
 img_w = img_h = img_size
 img_shape = (img_size, img_size, channels)
+n_epochs = 200
+
 classes = ['saxophone',
     'raccoon',
     'piano',
@@ -142,18 +145,16 @@ def train(df, epochs=2000,batch=128):
         log_mesg = "%d: [D loss: %f, acc: %f]" % (i, running_d_loss/i, running_d_acc/i)
         log_mesg = "%s  [A loss: %f, acc: %f]" % (log_mesg, running_a_loss/i, running_a_acc/i)
         print(log_mesg)
-
-        if (i+1)%1000 == 0:
-            noise = np.random.uniform(-1.0, 1.0, size=[16, 100])
-            gen_imgs = generator.predict(noise)
-            plt.figure(figsize=(5,5))
-            for k in range(gen_imgs.shape[0]):
-                plt.subplot(4, 4, k+1)
-                plt.imshow(gen_imgs[k, :, :, 0], cmap='gray')
-                plt.axis('off')
-            plt.tight_layout()
-            plt.show()
-            plt.savefig('./images/{}.png'.format(i+1))
+        noise = np.random.uniform(-1.0, 1.0, size=[16, 100])
+        gen_imgs = generator.predict(noise)
+        plt.figure(figsize=(5,5))
+        for k in range(gen_imgs.shape[0]):
+            plt.subplot(4, 4, k+1)
+            plt.imshow(gen_imgs[k, :, :, 0], cmap='gray')
+            plt.axis('off')
+        plt.tight_layout()
+        plt.show()
+        plt.savefig('./images/{}.png'.format(i+1))
     return a_loss, d_loss
 
 
@@ -170,8 +171,24 @@ def save_model(model_json, name):
     with open(name, "w+") as json_file:
         json_file.write(model_json)
 
+def save_real_imgs(real_imgs):
+    doodle_per_img = 16
+    for i in range(real_imgs.shape[0] - doodle_per_img):
+        plt.figure(figsize=(5,5))
+        for k in range(doodle_per_img):
+            plt.subplot(4, 4, k+1)
+            plt.imshow(real_imgs.iloc[i + k].reshape((img_size, img_size)), cmap='gray')
+            plt.axis('off')
+        print("Saving {}".format(i))
+        plt.tight_layout()
+        plt.show()
+        plt.savefig('./images/real_{}.png'.format(i+1))
+
+
 data = get_all_classes()
-train(data, epochs=6000, batch=128)
+train(data, epochs=n_epochs, batch=128)
+
+
 save_model(generator.to_json(), "generator.json")
 save_model(AM.to_json(), "discriminator.json")
 
