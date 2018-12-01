@@ -21,7 +21,7 @@ channels = 1
 img_size = 28
 img_w = img_h = img_size
 img_shape = (img_size, img_size, channels)
-n_epochs = 200
+n_epochs = 500
 
 classes = ['saxophone',
     'raccoon',
@@ -154,7 +154,7 @@ def train(df, epochs=2000,batch=128):
             plt.axis('off')
         plt.tight_layout()
         plt.show()
-        plt.savefig('./images/{}.png'.format(i+1))
+        plt.savefig('./images/panda_{}.png'.format(i+1))
     return a_loss, d_loss
 
 
@@ -167,25 +167,19 @@ def get_all_classes():
         df = df.append(df2)
     return df.sample(frac=1) # shuffle
 
+def get_class(label):
+    df = pd.DataFrame([], columns=['Image', 'Label'])
+    data = np.load('./data/%s.npy' % label) / 255
+    data = np.reshape(data, [data.shape[0], img_size, img_size, 1])
+    df2 = pd.DataFrame([(row, i) for row in data], columns=['Image', 'Label'])
+    return df.sample(frac=1) # shuffle
+
 def save_model(model_json, name):
     with open(name, "w+") as json_file:
         json_file.write(model_json)
 
-def save_real_imgs(real_imgs):
-    doodle_per_img = 16
-    for i in range(real_imgs.shape[0] - doodle_per_img):
-        plt.figure(figsize=(5,5))
-        for k in range(doodle_per_img):
-            plt.subplot(4, 4, k+1)
-            plt.imshow(real_imgs.iloc[i + k].reshape((img_size, img_size)), cmap='gray')
-            plt.axis('off')
-        print("Saving {}".format(i))
-        plt.tight_layout()
-        plt.show()
-        plt.savefig('./images/real_{}.png'.format(i+1))
+data = get_class(panda)
 
-
-data = get_all_classes()
 train(data, epochs=n_epochs, batch=128)
 
 
