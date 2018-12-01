@@ -192,18 +192,29 @@ def save_real_imgs(real_imgs):
         plt.show()
         plt.savefig('./images/real_{}.png'.format(i+1))
 
+def gen_imgs(number):
+    for i in range(number):
+        noise = np.random.uniform(-1.0, 1.0, size=[16, 100])
+        gen_imgs = generator.predict(noise)
+        plt.figure(figsize=(5,5))
+        for k in range(gen_imgs.shape[0]):
+            plt.subplot(4, 4, k+1)
+            plt.imshow(gen_imgs[k, :, :, 0], cmap='gray')
+            plt.axis('off')
+            plt.tight_layout()
+            plt.show()
+        plt.savefig('./images/{}.png'.format(number+1))
+        
 
-#data = get_all_classes()
+data = get_all_classes()
 #train(data, epochs=n_epochs, batch=128)
 
 
 #save_model(generator.to_json(), "generator.json")
 #save_model(AM.to_json(), "discriminator.json")
 
-load_model("..
-
-
-
+load_model("../saved_models/generator.json", "generator")
+gen_imgs(999)
 
 
 
