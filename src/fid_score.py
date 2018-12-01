@@ -33,6 +33,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 import os
+import cv2 # package: opencv-python
 import pathlib
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 
@@ -47,7 +48,7 @@ from inception import InceptionV3
 
 
 parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
-parser.add_argument('path', type=str, nargs=2,
+parser.add_argument('--path', type=str, nargs=2,
                     help=('Path to the generated images or '
                           'to .npz statistic files'))
 parser.add_argument('--batch-size', type=int, default=64,
@@ -211,7 +212,15 @@ def _compute_statistics_of_path(path, model, batch_size, dims, cuda):
         path = pathlib.Path(path)
         files = list(path.glob('*.jpg')) + list(path.glob('*.png'))
 
-        imgs = np.array([imread(str(fn)).astype(np.float32) for fn in files])
+        uncut_imgs = np.array([imread(str(fn)).astype(np.float32)[:,:,0:3] for fn in files])
+        imgs = []
+
+        # cut up the generated 4x4 images from matplotlib
+        for i in uncut_imgs:
+            for x in [43, 164, 285, 406]:
+                for y in [19, 40, 262, 383]:
+                    imgs.append(i[y:y+79, x:x+79, :])
+        imgs = np.array(imgs)
 
         # Bring images to shape (B, 3, H, W)
         imgs = imgs.transpose((0, 3, 1, 2))
