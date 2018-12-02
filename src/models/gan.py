@@ -9,6 +9,8 @@ from keras.layers import Activation, Reshape, Conv2DTranspose, UpSampling2D
 from keras.optimizers import RMSprop
 from keras import optimizers
 
+import h5py
+
 import pandas as pd
 import matplotlib
 from matplotlib import pyplot as plt
@@ -174,21 +176,17 @@ def get_class(label):
     df2 = pd.DataFrame([(row, i) for row in data], columns=['Image', 'Label'])
     return df.sample(frac=1) # shuffle
 
-def save_model(model_json, name):
-    with open(name, "w+") as json_file:
-        json_file.write(model_json)
+def save_model(model, name):
+    with open(name + ".json", "w+") as json_file:
+        json_file.write(model.to_json())
+    model.save_weights(name+".h5")
 
-data = get_class(panda)
+data = get_all_classes()
 
 train(data, epochs=n_epochs, batch=128)
 
-
-save_model(generator.to_json(), "generator.json")
-save_model(AM.to_json(), "discriminator.json")
-
-
-
-
+save_model(generator, "generator")
+save_model(AM, "discriminator")
 
 
 
