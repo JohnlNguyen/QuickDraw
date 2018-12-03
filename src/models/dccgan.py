@@ -1,7 +1,7 @@
 import os
 import random
 import numpy as np
-
+import tensorflow as tf
 import keras
 from keras.models import Sequential, Model
 from keras.layers import Input, Dense, Conv2D, BatchNormalization, Dropout, Flatten
@@ -11,20 +11,30 @@ from keras import optimizers
 
 import pandas as pd
 import matplotlib
-from matplotlib import pyplot as plt
+import matplotlib.pyplot as plt
 
+import csv
 
-matplotlib.interactive(True)
-
+# Just disables the warning, doesn't enable AVX/FMA
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+os.makedirs('images', exist_ok=True)
+os.makedirs('models', exist_ok=True)
 
 
 channels = 1
 img_size = 28
 img_w = img_h = img_size
 img_shape = (img_size, img_size, channels)
-n_epochs = 2000
-
-classes = ['saxophone',
+batch_size = 16  # 512
+n_epochs = 2  # 5
+max_num_batches = 3  # 100000
+batches_needed_before_saving_images = 1  # 500
+batches_needed_before_saving_models = 1  # 500
+noise_dim = 100
+num_saved_images_per_class = 8
+classes = [
+    #'piano','bee', 'apple'  # for test
+    'saxophone',
     'raccoon',
     'piano',
     'panda',
@@ -33,21 +43,17 @@ classes = ['saxophone',
     'ceiling_fan',
     'bed',
     'basket',
-    'aircraft_carrier']
-
+    'aircraft_carrier',
+]
 num_classes = len(classes)
 
 def discriminator_builder(depth=64,p=0.4):
-
     # Define inputs
-    #inputs = Input((img_w,img_h,1))
     image = Input(shape=img_shape)
     label = Input(shape=(1,), dtype='int32')
     label_embedding = Embedding(num_classes, np.prod(img_shape))(label)
     reshaped_label_embedding = Reshape(img_shape)(label_embedding)
-    #print(label_embedding.shape, ' *', image.shape, ' *', reshaped_label_embedding.shape)
     inputs = multiply([image, reshaped_label_embedding])
-    #print(inputs.shape)
 
     # Convolutional layers
     conv1 = Conv2D(depth*1, 5, strides=2, padding='same', activation='relu')(inputs)
@@ -69,17 +75,18 @@ def discriminator_builder(depth=64,p=0.4):
     return model
 
 discriminator = discriminator_builder()
-discriminator.compile(loss='binary_crossentropy', optimizer=RMSprop(lr=0.0008, clipvalue=1.0, decay=6e-8), metrics=['accuracy'])
+discriminator.compile(
+    loss='binary_crossentropy',
+    optimizer=RMSprop(lr=0.0008, clipvalue=1.0, decay=6e-8),
+    metrics=['accuracy'],
+)
 
-def generator_builder(z_dim=100,depth=64,p=0.4):
-
+def generator_builder(z_dim,depth=64,p=0.4):
     # Define inputs
-    #inputs = Input((z_dim,))
     noise = Input(shape=(z_dim,))
     label = Input(shape=(1,), dtype='int32')
     label_embedding = (Embedding(num_classes, z_dim)(label))
     label_embedding = Reshape((z_dim,))(label_embedding)
-
     inputs = multiply([noise, label_embedding])
 
     # First dense layer
@@ -113,9 +120,9 @@ def generator_builder(z_dim=100,depth=64,p=0.4):
 
     return model
 
-generator = generator_builder()
+generator = generator_builder(noise_dim)
 
-def adversarial_builder(z_dim=100):
+def adversarial_builder(z_dim):
     noise = Input(shape=(z_dim,))
     label = Input(shape=(1,), dtype='int32')
     fake_image = generator([noise, label])
@@ -124,61 +131,148 @@ def adversarial_builder(z_dim=100):
     is_real = discriminator([fake_image, label])
     return Model([noise, label], is_real)
 
-AM = adversarial_builder()
-AM.compile(loss='binary_crossentropy', optimizer=RMSprop(lr=0.0004, clipvalue=1.0, decay=3e-8), metrics=['accuracy'])
+AM = adversarial_builder(noise_dim)
+AM.compile(
+    loss='binary_crossentropy',
+    optimizer=RMSprop(lr=0.0004, clipvalue=1.0, decay=3e-8),
+    metrics=['accuracy']
+)
 
 def make_trainable(net, is_trainable):
     net.trainable = is_trainable
     for l in net.layers:
         l.trainable = is_trainable
 
+def plot_figures(figures, titles, nrows = 1, ncols=1):
+    fig, axeslist = plt.subplots(ncols=ncols+1, nrows=nrows)
+    n_titles_ins = 0
+    for ind in range(len(figures)):
+        if ind % ncols == 0:
+            axeslist.ravel()[ind + n_titles_ins].text(0, 0, titles[ind], fontsize=8)
+            axeslist.ravel()[ind + n_titles_ins].set_axis_off()
+            n_titles_ins += 1
+        axeslist.ravel()[ind + n_titles_ins].imshow(figures[ind], cmap='gray')
+        axeslist.ravel()[ind + n_titles_ins].set_axis_off()
+    # plt.tight_layout()
+    return fig
 
-def train(df, epochs=2000,batch=128):
+def generate_and_save_images(image_index):
+    labels = np.array([
+        label for label in range(num_classes)
+        for _ in range(num_saved_images_per_class)
+    ])
+    noise = np.random.uniform(-1.0, 1.0, size=[labels.shape[0], noise_dim])
+    gen_imgs = generator.predict([noise, labels])
+    fig = plot_figures(
+        figures=gen_imgs[:,:,:,0],
+        titles=[classes[label] for label in labels],
+        nrows=num_classes,
+        ncols=num_saved_images_per_class,
+    )
+    # plt.show()
+    fig.savefig("./images/%d.png" % image_index)
+    plt.close(fig)
+
+def train(df, n_epochs, batch_size):
     d_loss = []
     a_loss = []
     running_d_loss = 0
     running_d_acc = 0
     running_a_loss = 0
     running_a_acc = 0
-    for i in range(1, epochs+1):
-        batch_idx = np.random.choice(df.shape[0] ,batch,replace=False)
+    num_processed_batches = 0
+    n_batches = len(df) // batch_size
+    if n_batches > max_num_batches:
+        n_batches = max_num_batches
+    with open('training_log.csv', mode='w') as training_log_file:
+        fieldnames = ['Epoch', 'BatchIndex', 'BatchSize', 'DLoss', 'DAcc', 'ALoss', 'AAcc']
+        training_log = csv.DictWriter(training_log_file, fieldnames=fieldnames)
+        training_log.writeheader()
+        for epoch in range(n_epochs):
+            for batch_ind in range(n_batches):
+                # ==================== Extract batch input
+                batch_start = batch_ind * batch_size
+                batch_end = (batch_ind + 1) * batch_size
+                real_imgs = np.array([
+                    np.reshape(row, img_shape)
+                    for row in df['Image'].iloc[batch_start:batch_end]
+                ])
+                img_labels = np.array([
+                    label
+                    for label in df['Label'].iloc[batch_start:batch_end]
+                ])
 
-        real_imgs = np.array([np.reshape(row, (28, 28, 1)) for row in df['Image'].iloc[batch_idx]])
-        labels = np.array([label for label in df['Label'].iloc[batch_idx]])
+                # ==================== Training Discriminator
+                # The latest generator is kept frozen during the discriminator training
 
-        noise = np.random.uniform(-1.0, 1.0, size=[batch, 100])
+                # Creating fake images using the latest generator
+                noise = np.random.uniform(-1.0, 1.0, size=[batch_size, noise_dim])
+                fake_imgs = generator.predict([noise, img_labels])
 
-        fake_imgs = generator.predict([noise, labels])
-        x = np.concatenate((real_imgs,fake_imgs))
-        duplicate_labels = np.concatenate((labels,labels))
-        y = np.ones([2*batch,1])
-        y[batch:,:] = 0
-        make_trainable(discriminator, True)
-        d_loss.append(discriminator.train_on_batch([x, duplicate_labels],y))
-        running_d_loss += d_loss[-1][0]
-        running_d_acc += d_loss[-1][1]
-        make_trainable(discriminator, False)
+                # Preparing the input for discriminator by joining real and fake data
+                disc_input_images = np.concatenate(
+                    (real_imgs, fake_imgs)
+                )
+                disc_true_validity = np.concatenate(
+                    (np.ones([batch_size,1]), np.zeros([batch_size,1]))
+                )
+                disc_img_labels = np.concatenate(
+                    (img_labels, img_labels)
+                )
 
-        noise = np.random.uniform(-1.0, 1.0, size=[batch, 100])
-        y = np.ones([batch,1])
-        a_loss.append(AM.train_on_batch([noise, labels],y))
-        running_a_loss += a_loss[-1][0]
-        running_a_acc += a_loss[-1][1]
+                # Actual training of the discriminator
+                make_trainable(discriminator, True)
+                d_loss.append(discriminator.train_on_batch(
+                    [disc_input_images, disc_img_labels],
+                    disc_true_validity
+                ))
+                running_d_loss += d_loss[-1][0]
+                running_d_acc += d_loss[-1][1]
 
-        log_mesg = "%d: [D loss: %f, acc: %f]" % (i, running_d_loss/i, running_d_acc/i)
-        log_mesg = "%s  [A loss: %f, acc: %f]" % (log_mesg, running_a_loss/i, running_a_acc/i)
-        print(log_mesg)
-        if (i+1)%100 == 0:
-            noise = np.random.uniform(-1.0, 1.0, size=[16, 100])
-            gen_imgs = generator.predict([noise,labels])
-            plt.figure(figsize=(5,5))
-            for k in range(gen_imgs.shape[0]):
-                plt.subplot(4, 4, k+1)
-                plt.imshow(gen_imgs[k, :, :, 0], cmap='gray')
-                plt.axis('off')
-                plt.tight_layout()
-                plt.show()
-                plt.savefig('./images/DC_Gan{}.png'.format(i+1))
+                # ==================== Training Discriminator
+                # The latest discriminator is kept frozen during the generator training
+                make_trainable(discriminator, False)
+
+                # Noise for Generator inside AM
+                am_noise = np.random.uniform(-1.0, 1.0, size=[batch_size, noise_dim])
+                disc_false_validity = np.ones([batch_size,1])
+                a_loss.append(AM.train_on_batch(
+                    [am_noise, img_labels],
+                    disc_false_validity
+                ))
+                running_a_loss += a_loss[-1][0]
+                running_a_acc += a_loss[-1][1]
+
+                # ==================== Logging
+                num_processed_batches += 1
+                training_record = {
+                    'Epoch': epoch,
+                    'BatchIndex': batch_ind,
+                    'BatchSize': batch_size,
+                    'DLoss': running_d_loss/num_processed_batches,
+                    'DAcc': running_d_acc/num_processed_batches,
+                    'ALoss': running_a_loss/num_processed_batches,
+                    'AAcc': running_a_acc/num_processed_batches,
+                }
+                training_log.writerow(training_record)
+                log_mesg = "[Epoch %d / %d, Batch %d / %d]" % (epoch, n_epochs, batch_ind, n_batches)
+                log_mesg = "%s: [D loss: %f, acc: %f]" % (
+                    log_mesg, training_record['DLoss'], training_record['DAcc']
+                )
+                log_mesg = "%s  [A loss: %f, acc: %f]" % (
+                    log_mesg, training_record['ALoss'], training_record['AAcc']
+                )
+                print(log_mesg)
+
+
+                if (num_processed_batches % batches_needed_before_saving_models == 0):
+                    save_model(generator.to_json(), "./models/gen%d.json" % num_processed_batches)
+                    save_model(AM.to_json(), "./models/am%d.json" % num_processed_batches)
+                if (
+                    num_processed_batches % batches_needed_before_saving_images == 0
+                    or (epoch == n_epochs - 1 and batch_ind >= n_batches - 5)
+                ):
+                    generate_and_save_images(num_processed_batches)
     return a_loss, d_loss
 
 
@@ -186,17 +280,36 @@ def get_all_classes():
     df = pd.DataFrame([], columns=['Image', 'Label'])
     for i, label in enumerate(classes):
         data = np.load('./data/%s.npy' % label) / 255
-        data = np.reshape(data, [data.shape[0], img_size, img_size, 1])
+        data = np.reshape(data, [data.shape[0], img_size, img_size, channels])
         df2 = pd.DataFrame([(row, i) for row in data], columns=['Image', 'Label'])
         df = df.append(df2)
+    df = df.sample(frac=1).reset_index(drop=True)
     return df
 
 def save_model(model_json, name):
     with open(name, "w+") as json_file:
         json_file.write(model_json)
 
-data = get_all_classes()
-train(data, epochs=n_epochs, batch=128)
+# def save_real_imgs(real_imgs):
+#     doodle_per_img = 16
+#     for i in range(real_imgs.shape[0] - doodle_per_img):
+#         plt.figure(figsize=(5,5))
+#         for k in range(doodle_per_img):
+#             plt.subplot(4, 4, k+1)
+#             plt.imshow(real_imgs.iloc[i + k].reshape((img_size, img_size)), cmap='gray')
+#             plt.axis('off')
+#         print("Saving {}".format(i))
+#         plt.tight_layout()
+#         plt.show()
+#         plt.savefig('./images/real_{}.png'.format(i+1))
 
-save_model(generator.to_json(), "./saved_models/DC_generator.json")
-save_model(AM.to_json(), "./saved_models/DC_discriminator.json")
+# ======================= Main Body
+print("Loading %d classes..." % num_classes)
+data = get_all_classes()
+print("Successfully loaded the total of %d images." % data.shape[0])
+print("Starting the training with %d full epochs in batches of size %d..." % (n_epochs, batch_size))
+train(data, n_epochs, batch_size)
+print("Training Finished. Saving models...")
+save_model(generator.to_json(), "generator.json")
+save_model(AM.to_json(), "adversarial.json")
+print("Done!")
